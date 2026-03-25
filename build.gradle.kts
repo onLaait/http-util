@@ -1,9 +1,9 @@
 plugins {
-    kotlin("jvm") version "2.3.0"
+    kotlin("jvm") version "2.3.10"
     `maven-publish`
 }
 
-group = "laait"
+group = "com.github.onlaait"
 version = "1.0"
 
 repositories {

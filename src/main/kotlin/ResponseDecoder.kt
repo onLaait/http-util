@@ -1,4 +1,4 @@
-package laait.httputil
+package com.github.onlaait.httputil
 
 import java.io.InputStream
 import java.net.http.HttpResponse

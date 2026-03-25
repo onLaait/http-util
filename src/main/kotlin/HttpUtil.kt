@@ -1,4 +1,4 @@
-package laait.httputil
+package com.github.onlaait.httputil
 
 import org.apache.logging.log4j.kotlin.Logging
 import java.io.IOException
@@ -18,7 +18,7 @@ object HttpUtil : Logging {
 
     val client = HttpClient.newHttpClient()
 
-    fun httpRequest(request: HttpRequest): InputStream {
+    fun request(request: HttpRequest, maxTry: Int = 5): HttpResponse<InputStream>? {
         val delay = IncreasingDelay(500)
         var fail = 0
         while (true) {
@@ -29,17 +29,20 @@ object HttpUtil : Logging {
                 } catch (e: IOException) {
                     fail++
                     val msg = { "HTTP 요청 전송 중 오류 $fail: ${request.uri()}\n${e.stackTraceToString()}" }
-                    if (fail > 5) {
+                    if (fail == maxTry) {
                         logger.error(msg)
-                    } else {
-                        logger.debug(msg)
+                        return null
                     }
+                    logger.debug(msg)
                     delay.sleep()
                     continue
                 }
-            return ResponseDecoder.decode(res)
+            return res
         }
     }
+
+    fun requestText(request: HttpRequest, maxTry: Int = 5): String? =
+        request(request, maxTry)?.body()?.readText()
 
     fun InputStream.readText(): String =
         bufferedReader().use { it.readText() }

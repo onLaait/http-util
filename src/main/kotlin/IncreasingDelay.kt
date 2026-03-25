@@ -1,4 +1,4 @@
-package laait.httputil
+package com.github.onlaait.httputil
 
 class IncreasingDelay(private var millis: Long) {
 
