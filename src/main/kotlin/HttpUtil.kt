@@ -9,6 +9,9 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.util.zip.GZIPInputStream
+import java.util.zip.InflaterInputStream
+import kotlin.jvm.optionals.getOrNull
 
 object HttpUtil : Logging {
 
@@ -16,16 +19,16 @@ object HttpUtil : Logging {
     const val MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Mobile Safari/537.36"
     const val SEC_CH_UA = "\"Not(A:Brand\";v=\"8\", \"Chromium\";v=\"144\""
 
-    val client = HttpClient.newHttpClient()
+    val client = HttpClient.newHttpClient()!!
 
-    fun request(request: HttpRequest, maxTry: Int = 5): HttpResponse<InputStream>? {
+    fun HttpClient.request(request: HttpRequest, maxTry: Int = 5): HttpResponse<InputStream>? {
         val delay = IncreasingDelay(500)
         var fail = 0
         while (true) {
             val res =
                 try {
                     logger.debug { "HTTP 요청 중: ${request.uri()}" }
-                    client.send(request, HttpResponse.BodyHandlers.ofInputStream())
+                    send(request, HttpResponse.BodyHandlers.ofInputStream())
                 } catch (e: IOException) {
                     fail++
                     val msg = { "HTTP 요청 전송 중 오류 $fail: ${request.uri()}\n${e.stackTraceToString()}" }
@@ -33,7 +36,7 @@ object HttpUtil : Logging {
                         logger.error(msg)
                         return null
                     }
-                    logger.debug(msg)
+                    logger.info(msg)
                     delay.sleep()
                     continue
                 }
@@ -41,14 +44,42 @@ object HttpUtil : Logging {
         }
     }
 
+    fun request(request: HttpRequest, maxTry: Int = 5): HttpResponse<InputStream>? =
+        client.request(request, maxTry)
+
+    fun HttpClient.requestText(request: HttpRequest, maxTry: Int = 5): String? {
+        val res = request(request, maxTry) ?: return null
+        return res.decodedBody().readText()
+    }
+
     fun requestText(request: HttpRequest, maxTry: Int = 5): String? =
-        request(request, maxTry)?.body()?.readText()
+        client.requestText(request, maxTry)
+
+    fun HttpResponse<InputStream>.decodedBody(): InputStream {
+        val body = body()
+        val headers = headers()
+        val encoding = headers.firstValue("Content-Encoding").getOrNull()
+        return when (encoding?.lowercase()) {
+            null -> body
+            "gzip" -> GZIPInputStream(body)
+            "deflate" -> InflaterInputStream(body)
+            else -> throw UnsupportedOperationException("Unsupported Content-Encoding: $encoding")
+        }
+    }
 
     fun InputStream.readText(): String =
         bufferedReader().use { it.readText() }
 
-    fun String.query(vararg queries: Pair<String, Any?>): String =
-        "$this?${queries.joinToString(separator = "&") { "${URLEncoder.encode(it.first, StandardCharsets.UTF_8)}=${if (it.second == null) "" else URLEncoder.encode(it.second.toString(), StandardCharsets.UTF_8)}" }}"
+    fun encodeQuery(vararg queries: Pair<String, Any?>): String =
+        queries.joinToString("&") { "${URLEncoder.encode(it.first, StandardCharsets.UTF_8)}=${if (it.second == null) "" else URLEncoder.encode(it.second.toString(), StandardCharsets.UTF_8)}" }
+
+    fun String.query(vararg queries: Pair<String, Any?>): String {
+        return buildString {
+            append(this)
+            if (last().let { it != '?' && it != '&' }) append(if (contains('?')) '&' else '?')
+            append(encodeQuery(*queries))
+        }
+    }
 
     fun HttpRequest.Builder.uri(uri: String): HttpRequest.Builder =
         uri(URI.create(uri))
@@ -59,7 +90,7 @@ object HttpUtil : Logging {
     fun HttpRequest.Builder.setAcceptEncoding(): HttpRequest.Builder =
         setHeader("accept-encoding", "gzip, deflate, br, zstd")
 
-    fun HttpRequest.Builder.setAcceptLanguage(acceptLanguage: String = "ko-KR,ko;q=0.9"): HttpRequest.Builder =
+    fun HttpRequest.Builder.setAcceptLanguage(acceptLanguage: String = "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"): HttpRequest.Builder =
         setHeader("accept-language", acceptLanguage)
 
     fun HttpRequest.Builder.setOrigin(origin: String): HttpRequest.Builder =
